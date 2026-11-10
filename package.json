@@ -1,0 +1,15 @@
+{
+  "name": "proyecto-tareas",
+  "private": true,
+  "description": "API de tareas (Express + MongoDB) y su frontend Gestor de tareas (Vue 3 + PWA)",
+  "scripts": {
+    "postinstall": "npm install --prefix api-tareas && npm install --prefix gestor-tareas",
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm run dev --prefix api-tareas\" \"npm run dev --prefix gestor-tareas\"",
+    "preview": "npm run build --prefix gestor-tareas && concurrently -k -n api,web -c magenta,cyan \"npm start --prefix api-tareas\" \"npm run preview --prefix gestor-tareas\"",
+    "test": "npm test --prefix gestor-tareas && npm test --prefix api-tareas"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": { "node": ">=18" }
+}

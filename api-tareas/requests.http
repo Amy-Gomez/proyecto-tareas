@@ -1,0 +1,136 @@
+### Ejemplos de petición/respuesta (extensión REST Client de VS Code)
+### Evento en tiempo real: cada cambio emite "tarea:cambio" por Socket.IO
+###   { "accion": "creada|actualizada|eliminada|adjunto-agregado", "datos": {...}, "ocurridoEn": "..." }
+@base = http://localhost:3000/api/tareas
+@id = REEMPLAZAR_CON_ID
+@adjuntoId = REEMPLAZAR_CON_ID_ADJUNTO
+
+### Crear tarea
+# 201 Created | Location: /api/tareas/<id> | ETag: "0"
+# {"datos":{"id":"6ae38aa9e39f489d5e62c8eb","titulo":"Preparar informe mensual","descripcion":"Consolidar métricas",
+#  "prioridad":"alta","estado":"pendiente","fechaLimite":"2026-11-15","adjuntos":[],"version":0,
+#  "creadaEn":"2026-10-29T18:04:25.524Z","actualizadaEn":"2026-10-29T18:04:25.524Z"}}
+POST {{base}}
+Content-Type: application/json
+
+{
+  "titulo": "Tarea de prueba 4",
+  "descripcion": "No toma mucho tiempo",
+  "prioridad": "baja",
+  "fechaLimite": "2026-11-22"
+}
+
+### Listar con filtros opcionales (estado, prioridad, buscar)
+# 200 OK
+# {"datos":[{ ...tarea... }],"total":1}
+GET {{base}}?estado=pendiente&prioridad=alta&buscar=informe
+
+### Obtener una tareea
+# 200 OK / ETag: "0"      -> {"datos":{ ...tarea... }}
+# 404 Not Found           -> {"error":{"codigo":"NO_ENCONTRADO","mensaje":"Tarea con id '...' no existe","detalles":[]}}
+GET {{base}}/6ae3a21a2080c9d4368e82be
+
+### Actualizar parcialmente (If-Match opcional = control de concurrencia)
+# 200 OK / ETag: "1"
+# {"datos":{ ...,"estado":"en_progreso","version":1, ... }}
+PATCH http://localhost:3000/api/tareas/6ae39ecb2080c9d4368e82ba
+Content-Type: application/json
+If-Match: "0"
+
+{ "estado": "completada",
+  "descripcion": "Informe mensual consolidado y revisado"
+}
+
+### Reemplazar completa (titulo, prioridad y estado obligatorios)
+# 200 OK / ETag: "2"      -> {"datos":{ ... }}
+PUT http://localhost:3000/api/tareas/6ae3a1b62080c9d4368e82bd
+Content-Type: application/json
+
+{
+  "titulo": "Informe mensual final",
+  "descripcion":"Informe detallado",
+  "prioridad": "media",
+  "estado": "completada"
+}
+
+### Eliminar (borra también sus archivos)
+# 204 No Content
+DELETE {{base}}/{{id}}
+
+### Subir archivo (campo "archivo"; PDF, PNG, JPEG o texto, máx. 2 MB)
+# 201 Created | Location: /api/tareas/<id>/adjuntos/<adjuntoId>
+# {"datos":{"id":"6ae38aa9e39f489d5e62c8ed","nombre":"nota.txt","tipo":"text/plain","tamano":43,
+#  "url":"/api/tareas/6ae38aa9e39f489d5e62c8eb/adjuntos/6ae38aa9e39f489d5e62c8ed"}}
+POST {{base}}/{{id}}/adjuntos
+Content-Type: multipart/form-data; boundary=LIMITE
+
+--LIMITE
+Content-Disposition: form-data; name="archivo"; filename="nota.txt"
+Content-Type: text/plain
+
+< ./nota.txt
+--LIMITE--
+
+### Descargar archivo
+# 200 OK | Content-Disposition: attachment; filename=nota.txt
+GET {{base}}/{{id}}/adjuntos/{{adjuntoId}}
+
+### ================= Errores (formato uniforme) =================
+
+### Validación
+# 400 Bad Request
+# {"error":{"codigo":"VALIDACION","mensaje":"Los datos enviados no son válidos","detalles":[
+#   {"campo":"titulo","mensaje":"debe ser texto de 3 a 100 caracteres"},
+#   {"campo":"prioridad","mensaje":"debe ser uno de: baja, media, alta"}]}}
+POST {{base}}
+Content-Type: application/json
+
+{ "titulo": "ab", "prioridad": "urgente" }
+
+### Inyección NoSQL bloqueada
+# 400 Bad Request
+# {"error":{"codigo":"VALIDACION","mensaje":"Los datos enviados no son válidos","detalles":[
+#   {"campo":"titulo","mensaje":"debe ser texto de 3 a 100 caracteres"}]}}
+POST {{base}}
+Content-Type: application/json
+
+{ "titulo": { "$ne": null } }
+
+### Conflicto: título duplicado (no distingue mayúsculas ni espacios)
+# 409 Conflict
+# {"error":{"codigo":"DUPLICADO","mensaje":"Ya existe una tarea con ese título","detalles":[{"campo":"titulo","mensaje":"debe ser único"}]}}
+POST {{base}}
+Content-Type: application/json
+
+{ "titulo": "PREPARAR  informe mensual" }
+
+### Conflicto: versión desactualizada (otra petición modificó la tarea antes)
+# 409 Conflict
+# {"error":{"codigo":"CONFLICTO_VERSION","mensaje":"La tarea fue modificada por otra petición; la versión 0 ya no es la actual",
+#   "detalles":[{"campo":"If-Match","mensaje":"vuelve a obtener la tarea y reintenta con la versión vigente"}]}}
+PATCH {{base}}/{{id}}
+Content-Type: application/json
+If-Match: "0"
+
+{ "estado": "completada" }
+
+### JSON mal formado
+# 400 Bad Request -> {"error":{"codigo":"JSON_INVALIDO","mensaje":"El cuerpo no es un JSON válido","detalles":[]}}
+POST {{base}}
+Content-Type: application/json
+
+{ malo }
+
+### Prueba de consulta segura/sanitización
+GET http://localhost:3000/api/tareas?titulo[$ne]=null
+
+### Prueba de subida de archivo adjunto
+POST http://localhost:3000/api/tareas/6ae3a0932080c9d4368e82bc/adjuntos
+Content-Type: multipart/form-data; charset=utf-8; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="archivo"; filename="nota.txt"
+Content-Type: text/plain
+
+< ./nota.txt
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
